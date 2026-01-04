@@ -5,7 +5,8 @@ from threading import Event
 from itertools import chain, repeat
 import copy
 from board import MazeBoard, symbols
-from cells import *
+from cells import Cell, TelCell, Position, Actions, RegCell
+from typing import Optional
 
 class MazeEnvironment():
 
@@ -47,6 +48,93 @@ class MazeEnvironment():
         
         return actions
     
+    def next_state(self, s:Position, a:Actions) -> tuple[Optional[Position], Optional[float]]:
+        #return the next state and reward after taking action a in state s
+        if a == Actions.UP.name:
+            next_s = Position(s.row - 1, s.col)
+        elif a == Actions.DOWN.name:
+            next_s = Position(s.row + 1, s.col)
+        elif a == Actions.LEFT.name:
+            next_s = Position(s.row, s.col - 1)
+        elif a == Actions.RIGHT.name:
+            next_s = Position(s.row, s.col + 1)
+        else:
+            return None, None
+        
+        #teleport state handling, if agent is on a teleport cell, it is actually teleported
+        if self.board[s()].is_teleport():
+            cell = self.board[next_s()]
+            if isinstance(cell, TelCell):
+                next_s = cell.get_next_cell()
+
+        #if next state is valid and steppable, return it
+        if 0 <= next_s.row < self.board.rows_no and \
+            0 <= next_s.col < self.board.cols_no and \
+            self.board[next_s()].is_steppable():
+
+            if self.board[next_s()].is_teleport():
+                cell = self.board[next_s()]
+                if isinstance(cell, TelCell):
+                    next_s = cell.get_next_cell()
+        
+            return next_s, self.board[next_s()].get_reward()
+        return None, None
+                
+
+
+    def update_state_value(self, s:Position, v:dict[Position,float], gamma:float, actions) -> float:
+        #return max value - iterating over all possible actions
+        values=[]
+        for a in actions:
+            next_state, reward = self.next_state(s, a)
+            if next_state is not None and reward is not None:
+                values.append(reward + gamma * v[next_state])
+        #if no actions were possible return small value
+        return  max(values) if len(values) else v[s]-10
+    
+    def update_all_state_values(self, v:dict[Position,float], gamma:float, policy:dict) -> dict[Position,float]:
+        #return updated state values for all states by following the given policy
+        values = copy.deepcopy(v)
+        for s in self.states:
+            if not self.board[s()].is_terminal():
+                actions = [action for action in self.actions if action in policy[s]]
+
+                if self.board[s()].is_teleport():
+                    cell = self.board[s()]
+                    if isinstance(cell, TelCell):
+                        next_state = cell.get_next_cell()
+                        actions = [action for action in self.actions if action in policy[next_state]]
+                values[s] = self.update_state_value(s, v, gamma, actions)
+        return values
+    
+    def update_action_value(self, s:Position, a:Actions, q:dict[Position, dict[Actions, float]], gamma:float, policy:dict)->float:
+        #return updated Q-value for state s and action a 
+        q_values = []
+        next_state, reward = self.next_state(s, a)
+        if next_state is None:
+            return 0
+        elif self.board[next_state()].is_terminal():
+            return 0
+        
+        available_actions = [act for act in Actions if act in policy.get(next_state, {})]
+        for next_a in available_actions:
+            q_val = q[next_state].get(next_a)
+            if q_val is None or reward is None:
+                continue
+            q_values.append(reward + gamma * q_val)
+        #if no actions were possible return small value or None
+        return max(q_values) if q_values else 0.0
+    
+    def update_all_action_values(self, q:dict[Position, dict[Actions,float]], gamma:float, policy:dict)->dict[Position,dict[Actions,float]]:
+    #return updated Q-values for all states and actions by following the given policy
+        q_values = copy.deepcopy(q)
+        for s in self.states:
+            if not self.board[s()].is_terminal():
+                for a in Actions:
+                    q_values[s][a] = self.update_action_value(s, a, q, gamma, policy)
+        return q_values
+    
+         
 
 
 #OUT OF CLASS
@@ -63,6 +151,6 @@ def get_error(new:dict, old:dict) -> float:
     
     #in case of Q-value dictionaries
     max_val = []
-    for s in new:
+    for s in new: 
         max_val.append(get_error(new[s], old[s])) #create a list of max errors for each state
     return max(max_val)

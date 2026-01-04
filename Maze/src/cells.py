@@ -1,6 +1,9 @@
 from dataclasses import dataclass, FrozenInstanceError
 from enum import Enum
 
+from sklearn.naive_bayes import abstractmethod
+from typing import Optional
+
 @dataclass(frozen=True)
 class Position():
     row : int
@@ -9,7 +12,7 @@ class Position():
     def __call__(self):
         return (self.row, self.col)
 
-# To add more actions edit Actions, symbols and next_state method of Environment
+
 class Actions(Enum):
     UP       = 0
     DOWN     = 1
@@ -24,6 +27,8 @@ class Cell():
         self.terminal = terminal
         self.teleport = teleport
 
+    @abstractmethod
+    
     def set_reward(self, reward):
         self.reward = reward
     
@@ -38,6 +43,13 @@ class Cell():
 
     def is_teleport(self) -> bool:
         return self.teleport
+    
+    def get_next_cell(self) -> Optional[Position]:
+        """
+        Get teleport destination for teleport cells.
+        Returns None for non-teleport cells.
+        """
+        return None
 
 class RegCell(Cell):
 

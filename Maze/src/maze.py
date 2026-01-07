@@ -6,7 +6,9 @@ from itertools import chain, repeat
 import copy
 from board import MazeBoard, symbols
 from cells import Cell, TelCell, Position, Actions, RegCell
-from typing import Optional
+from typing import Optional, Callable
+random = Random()
+running = Event()
 
 class MazeEnvironment():
 
@@ -154,3 +156,82 @@ def get_error(new:dict, old:dict) -> float:
     for s in new: 
         max_val.append(get_error(new[s], old[s])) #create a list of max errors for each state
     return max(max_val)
+
+def value_iteration(update:Callable, values: dict, gamma:float, eps:float, iterations:int = 100, policy:Optional[dict] = None) ->dict[Position, float]:
+    #perform value iteration for a given number of iterations or until convergence
+    new_values = copy.deepcopy(values)
+    old_values = copy.deepcopy(values)
+    error = float('inf')
+    
+    for i in range(iterations):
+        new_values = update(old_values, gamma, policy if policy is not None else {})
+        error = get_error(copy.deepcopy(new_values), copy.deepcopy(old_values))
+        old_values = copy.deepcopy(new_values)
+        if error < eps:
+            print(f"Value iteration converged after {i} iterations.")
+            return new_values
+    print(f"Value iteration did not converge after {iterations} iterations. Final error: {error}")
+    return new_values
+
+def policy_iteration(env: MazeEnvironment, update:Callable, values:dict, policy:dict, update_policy:Callable, gamma:float, eps:float, iterations:int = 100) -> tuple[dict, dict[Position,float]]:
+    #perform policy iteration for a given number of iterations or until convergence
+    new_values = copy.deepcopy(values)
+    
+    for i in range(iterations):
+        old_values = copy.deepcopy(values)
+        new_values= value_iteration(update, old_values, gamma, eps, iterations, policy=policy)
+        new_policy = {s:update_policy(env, s, new_values, gamma).name for s in env.states}
+        if policy == new_policy:
+            print(f"Policy iteration converged after {i} iterations.")
+            return policy, new_values
+        policy = new_policy
+    #policy did not converge
+    print(f"Policy iteration did not converge after {iterations} iterations.")
+    return policy, new_values
+
+def greedy(env:MazeEnvironment, s:Position, v:dict[Position,float], gamma:float) -> Actions:
+    #return the action that maximizes the value function in state s
+    values=[]
+    min_v=min(v.values())
+
+    for a in Actions:
+        s_new, r = env.next_state(s,a)
+
+        if s_new is not None and r is not None:
+            values.append(r + gamma * v[s_new])
+        else:
+            values.append(min_v - 1000)  #penalize impossible actions
+    return Actions(np.argmax(values))
+
+def greedy_q(env:MazeEnvironment, s:Position, q:dict[Position, dict[Actions,float]], gamma:float) -> Actions:
+    #return the action that maximizes the Q-value function in state s
+    values=[(q[s][a],a) for a in Actions if q[s][a] is not None]
+
+    if not len(values):
+        actions=list(env.actions.keys())
+        return random.choice(list(Actions))
+    max_value = max(values, key=lambda x: x[0])
+    return max_value[1]
+
+def apply_policy(env:MazeEnvironment, policy:Callable, state:Position, gamma:float, values:dict[Position,float], pi:Optional[dict]=None) -> float:
+    #apply the given policy starting from start_state for max_steps
+    #simulates an apisode and returns the total reward
+    gain=0
+    i=0
+    while not env.board[state()].is_terminal() and running.is_set():
+        if pi is not None:
+            action = pi[state]
+        else:
+            action = policy(env, state, values, gamma)
+        
+        next_state, reward = env.next_state(state, action)
+        if next_state is None or reward is None:
+            break
+        state = next_state
+        gain+=(gamma**i)*reward
+        i+=1
+        symbol=symbols[env.actions[action.name]]
+
+        env.board.ax.set_title(f"Gamma={gamma}, Gain={gain:.1f}")
+        env.board.draw_agent(state(), symbol)
+    return gain

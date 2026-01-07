@@ -44,12 +44,6 @@ class Cell():
     def is_teleport(self) -> bool:
         return self.teleport
     
-    def get_next_cell(self) -> Optional[Position]:
-        """
-        Get teleport destination for teleport cells.
-        Returns None for non-teleport cells.
-        """
-        return None
 
 class RegCell(Cell):
 

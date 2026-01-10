@@ -21,6 +21,7 @@ class MazeEnvironment():
         #return all steppable positions on the board
         #process cells for teleports
         states = []
+        print(f"Board size: {self.board.rows_no} x {self.board.cols_no}")
         for r in range(self.board.rows_no):
             for c in range(self.board.cols_no):
                 position = Position(r, c)
@@ -52,6 +53,11 @@ class MazeEnvironment():
     
     def next_state(self, s:Position, a:Actions) -> tuple[Optional[Position], Optional[float]]:
         #return the next state and reward after taking action a in state s
+        if self.board[s()].is_teleport():
+            cell = self.board[s()]
+            if isinstance(cell, TelCell):
+                teleport_dest = cell.get_next_cell()
+        
         if a == Actions.UP.name:
             next_s = Position(s.row - 1, s.col)
         elif a == Actions.DOWN.name:
@@ -63,24 +69,40 @@ class MazeEnvironment():
         else:
             return None, None
         
-        #teleport state handling, if agent is on a teleport cell, it is actually teleported
-        if self.board[s()].is_teleport():
+        if not (0 <= next_s.row < self.board.rows_no and
+            0 <= next_s.col < self.board.cols_no):
+        # Out of bounds - stay at current position with penalty
+            return s, -1
+
+        # Check if intended next position is steppable
+        if not self.board[next_s()].is_steppable():
+            return s, -1  # Wall or non-steppable - invalid move
+        
+        # Handle teleport: if next_s is a teleport, get the actual destination
+        if self.board[next_s()].is_teleport():
             cell = self.board[next_s()]
             if isinstance(cell, TelCell):
-                next_s = cell.get_next_cell()
-
-        #if next state is valid and steppable, return it
-        if 0 <= next_s.row < self.board.rows_no and \
-            0 <= next_s.col < self.board.cols_no and \
-            self.board[next_s()].is_steppable():
-
-            if self.board[next_s()].is_teleport():
-                cell = self.board[next_s()]
-                if isinstance(cell, TelCell):
-                    next_s = cell.get_next_cell()
-        
-            return next_s, self.board[next_s()].get_reward()
-        return None, None
+                teleport_dest = cell.get_next_cell()
+                
+                # Validate teleport destination
+                if teleport_dest is None:
+                    return None, None
+                
+                if not (0 <= teleport_dest.row < self.board.rows_no and
+                        0 <= teleport_dest.col < self.board.cols_no):
+                    # Teleport destination is out of bounds - invalid
+                    print(f"Warning: Teleport at ({next_s.row},{next_s.col}) leads to out-of-bounds ({teleport_dest.row},{teleport_dest.col})")
+                    return None, None
+                
+                if not self.board[teleport_dest()].is_steppable():
+                    # Teleport destination is not steppable - invalid
+                    return None, None
+                
+                # Use teleport destination as the actual next state
+                next_s = teleport_dest
+    
+        # Return the final next state and its reward
+        return next_s, self.board[next_s()].get_reward()
                 
 
 
@@ -90,7 +112,9 @@ class MazeEnvironment():
         for a in actions:
             next_state, reward = self.next_state(s, a)
             if next_state is not None and reward is not None:
-                values.append(reward + gamma * v[next_state])
+                if next_state in v:
+                    values.append(reward + gamma * v[next_state])
+                
         #if no actions were possible return small value
         return  max(values) if len(values) else v[s]-10
     
@@ -193,15 +217,18 @@ def greedy(env:MazeEnvironment, s:Position, v:dict[Position,float], gamma:float)
     #return the action that maximizes the value function in state s
     values=[]
     min_v=min(v.values())
-
-    for a in Actions:
+    actions = list(Actions)
+    for a in actions:
         s_new, r = env.next_state(s,a)
 
         if s_new is not None and r is not None:
             values.append(r + gamma * v[s_new])
         else:
             values.append(min_v - 1000)  #penalize impossible actions
-    return Actions(np.argmax(values))
+    best_idx = np.argmax(values)
+    
+    
+    return actions[best_idx]
 
 def greedy_q(env:MazeEnvironment, s:Position, q:dict[Position, dict[Actions,float]], gamma:float) -> Actions:
     #return the action that maximizes the Q-value function in state s
@@ -235,3 +262,207 @@ def apply_policy(env:MazeEnvironment, policy:Callable, state:Position, gamma:flo
         env.board.ax.set_title(f"Gamma={gamma}, Gain={gain:.1f}")
         env.board.draw_agent(state(), symbol)
     return gain
+
+def in_range(s:str, rows_n:int, cols_n:int) -> bool:
+    #check if the given string represents a valid position on the board
+    try:
+        numbers = s.split(",")
+        r = int(numbers[0])
+        c = int(numbers[1])
+
+        if 0<=r<rows_n and 0<=c<cols_n:
+            return True
+    except Exception as e:
+        print("Wrong format")
+    
+    return False
+
+def get_start_position(cells:list[list[Cell]], rows_no:int, cols_no:int) -> tuple[int,int]:
+    #Keep prompting the user for a starting position until they enter:
+    #valid form, position within bounds, and steppable cell.
+    prompts = chain(["Input starting position (r,c): "], \
+              repeat(f"Rows must be in range (0 - {rows_no}) \nColumns must be in range (0 - {cols_no}) \nChosen cell must be steppable \nTry again: "))
+    replies = map(input, prompts)
+
+    valid = next(filter(lambda s: in_range(s, rows_no, cols_no) and cells[int(s[0])][int(s[2])].is_steppable(), replies))
+    
+    return int(valid[0]), int(valid[2])
+
+def get_iteration_method() -> int:
+    '''Validates method chosen by the user'''
+
+    prompts = chain(["1. Value iteration\n2. Policy iteration\nChoose a iteration method: "], \
+                    repeat(f"Acceptable answers are '1' or '2'.\nTry again: "))
+    replies = map(input, prompts)
+
+    valid = next(filter(lambda s: int(s) in [1, 2], replies)) #Check if result is in list [1, 2]
+    return int(valid)
+
+def get_simulation_values() -> int:
+    '''Validates method chosen by the user'''
+
+    prompts = chain(["1. State-values\n2. Q-values\nChoose which values are used: "], \
+                    repeat(f"Acceptable answers are '1' or '2'.\nTry again: "))
+    replies = map(input, prompts)
+
+    valid = next(filter(lambda s: s.isnumeric() and int(s) in [1, 2], replies)) #if replie is number digit and is in list [1, 2]
+    return int(valid)
+
+def get_board() -> MazeBoard:
+    '''Generates a board with dimensions chosen by the user'''
+
+    prompts = chain(["Input board dimensions (r,c): "], repeat("Row and column numbers have to positive integers \nTry again: "))
+    replies = map(input, prompts)
+
+    valid = next(filter(lambda s: in_range(s, 100, 100), replies))
+    valid = valid.split(",")
+    r, c = int(valid[0]), int(valid[1])
+
+    # Allows the user to generate boards until they are satisfied
+    while True:
+        board = MazeBoard(r, c)
+        board.ax.set_title("Board preview")
+        board.draw_board()
+
+        if continue_question("Do you want to continue? (y/n): "):
+            return board
+        
+        plt.close()
+
+def continue_question(msg:str) -> bool:
+    prompts = chain([msg], \
+                    repeat(f"Only 'y' or 'n' are valid responses. \n{msg}"))
+    replies = map(input, prompts)
+
+    valid = next(filter(lambda s: s == 'y' or s == 'n', replies))
+
+    print("------------------------------")
+
+    if valid == 'y':
+        return True
+    return False
+
+if __name__ == "__main__":
+    running.set()
+
+    plt.ion()
+    board = get_board()
+
+    env = MazeEnvironment(board)
+
+    gamma = float(input("Input gamma: "))
+    eps = float(input("Input eps tolerance: "))
+
+    # Initializes state and state-action values randomly
+    v = {s:env.board[s()].get_reward() for s in env.states}
+    q = {}
+    for s in env.states:
+        if not board[s()].is_terminal():
+            q[s] = {}
+            for a in Actions:
+                sn, _ = env.next_state(s,a)
+                if sn is not None:
+                    q[s][a] = (-10)*random.random()
+                else:
+                    q[s][a] = None
+        else:
+            q[s] = {a: None for a in env.actions}
+
+    mode = get_iteration_method()
+    actions = list(env.actions.keys())
+
+    values: dict[Position, float] = v
+    q_values = q
+
+    policy_v: Optional[dict] = None
+    policy_q: Optional[dict] = None
+
+    gain = float(0)
+
+    if mode == 1:
+        # When value iteration is used all actions are possible
+        policy = {s: actions for s in env.states if not board[s()].is_terminal()}
+    
+        values = value_iteration(env.update_all_state_values, v, gamma, eps, policy=policy)
+        q_values = value_iteration(env.update_all_action_values, q, gamma, eps, policy=policy)
+    elif mode == 2:
+        # When policy iteraton is used only actions defined by the policy are possible
+        policy = {s: random.choice(actions) for s in env.states if not board[s()].is_terminal()}
+
+        policy_v, values = policy_iteration(env, env.update_all_state_values, v, policy, greedy, gamma, eps)
+        policy_q, q_values = policy_iteration(env, env.update_all_action_values, q, policy, greedy_q, gamma, eps)
+    plt.ion()
+    env.board.ax.clear()
+    env.board.ax.set_title("Board values preview")
+    env.board.draw_board()
+    env.board.draw_values(values)
+    plt.pause(0.1)
+
+    print("Click on a cell to view it's action values.")
+
+    while 1:
+        res = plt.waitforbuttonpress(8)
+        if res is None:
+            if continue_question("Do you want to continue? (y/n): "):
+                continue
+            break
+        
+        if board.mouse_col is not None and board.mouse_row is not None:
+            board.draw_q_values(q_values)
+            plt.pause(0.01)
+    
+    for text in board.value_texts:
+        text.remove()
+    board.value_texts.clear()
+
+    for text in board.action_texts:
+        text.remove()
+    board.action_texts.clear()
+
+    for text in board.moves:
+        text.remove()
+    board.moves.clear()
+    
+    plt.pause(0.1)
+
+    try:
+        print("usao u try")
+        while running.is_set():
+            print("usao u while")
+            val = get_simulation_values()
+
+            # Resets the board
+            [board.hide_text(text) for text in board.moves]
+            board.moves.clear()
+            plt.pause(0.1)
+
+            r, c = get_start_position(board.cells, board.rows_no, board.cols_no)
+            s = Position(r,c)
+
+            board.ax.clear()
+            board.draw_board()
+            board.ax.set_title(f"Gamma={gamma}, Gain={0}")
+            board.draw_agent(s(), "+")
+            plt.pause(0.1)
+
+            # State values
+            if val == 1:
+                gain = apply_policy(env, greedy, s, gamma, values, policy_v)
+            # State-action values
+            elif val == 2:
+                gain = apply_policy(env, greedy_q, s, gamma, q_values, policy_q)
+
+            # Shows all moves made in this run
+            [board.show_text(text) for text in board.moves]
+            plt.pause(0.1)
+
+            print("Gain: " + str(gain)) 
+
+            if not continue_question("Do you want to play again? (y/n): "):
+                running.clear()
+
+    except KeyboardInterrupt:
+        running.clear()
+
+    plt.close('all')
+    print("EXITED")

@@ -51,7 +51,7 @@ class MazeEnvironment():
         
         return actions
     
-    def next_state(self, s:Position, a:Actions) -> tuple[Optional[Position], Optional[float]]:
+    def next_state(self, s:Position, a:str) -> tuple[Optional[Position], Optional[float]]:
         #return the next state and reward after taking action a in state s
         if self.board[s()].is_teleport():
             cell = self.board[s()]
@@ -106,7 +106,7 @@ class MazeEnvironment():
                 
 
 
-    def update_state_value(self, s:Position, v:dict[Position,float], gamma:float, actions) -> float:
+    def update_state_value(self, s:Position, v:dict[Position,float], gamma:float, actions: list[str]) -> float:
         #return max value - iterating over all possible actions
         values=[]
         for a in actions:
@@ -133,30 +133,36 @@ class MazeEnvironment():
                 values[s] = self.update_state_value(s, v, gamma, actions)
         return values
     
-    def update_action_value(self, s:Position, a:Actions, q:dict[Position, dict[Actions, float]], gamma:float, policy:dict)->float:
+    def update_action_value(self, s:Position, a:str, q:dict[Position, dict[str, float]], gamma:float, policy:dict)->float:
         #return updated Q-value for state s and action a 
-        q_values = []
+        q_values: list[float] = []
         next_state, reward = self.next_state(s, a)
         if next_state is None:
             return 0
         elif self.board[next_state()].is_terminal():
             return 0
         
-        available_actions = [act for act in Actions if act in policy.get(next_state, {})]
-        for next_a in available_actions:
-            q_val = q[next_state].get(next_a)
-            if q_val is None or reward is None:
+        # normalize allowed actions for this next_state (policy may be list or dict)
+        allowed = policy.get(next_state, [])
+        allowed_actions = set(allowed.keys()) if isinstance(allowed, dict) else set(allowed)
+
+        for an in self.actions:
+            if allowed_actions and an not in allowed_actions:
                 continue
-            q_values.append(reward + gamma * q_val)
+            q_val = q[next_state].get(an)
+            if q_val is None:
+                continue
+            if next_state is not None and reward is not None:
+                q_values.append(reward + gamma * q_val)
         #if no actions were possible return small value or None
         return max(q_values) if q_values else 0.0
     
-    def update_all_action_values(self, q:dict[Position, dict[Actions,float]], gamma:float, policy:dict)->dict[Position,dict[Actions,float]]:
+    def update_all_action_values(self, q:dict[Position, dict[str,float]], gamma:float, policy:dict)->dict[Position,dict[str,float]]:
     #return updated Q-values for all states and actions by following the given policy
         q_values = copy.deepcopy(q)
         for s in self.states:
             if not self.board[s()].is_terminal():
-                for a in Actions:
+                for a in self.actions:
                     q_values[s][a] = self.update_action_value(s, a, q, gamma, policy)
         return q_values
     
@@ -190,7 +196,7 @@ def value_iteration(update:Callable, values: dict, gamma:float, eps:float, itera
     for i in range(iterations):
         new_values = update(old_values, gamma, policy if policy is not None else {})
         error = get_error(copy.deepcopy(new_values), copy.deepcopy(old_values))
-        old_values = copy.deepcopy(new_values)
+        old_values = new_values
         if error < eps:
             print(f"Value iteration converged after {i} iterations.")
             return new_values
@@ -202,7 +208,7 @@ def policy_iteration(env: MazeEnvironment, update:Callable, values:dict, policy:
     new_values = copy.deepcopy(values)
     
     for i in range(iterations):
-        old_values = copy.deepcopy(values)
+        old_values = copy.deepcopy(new_values)
         new_values= value_iteration(update, old_values, gamma, eps, iterations, policy=policy)
         new_policy = {s:update_policy(env, s, new_values, gamma).name for s in env.states}
         if policy == new_policy:
@@ -215,30 +221,37 @@ def policy_iteration(env: MazeEnvironment, update:Callable, values:dict, policy:
 
 def greedy(env:MazeEnvironment, s:Position, v:dict[Position,float], gamma:float) -> Actions:
     #return the action that maximizes the value function in state s
-    values=[]
+    values={}
     min_v=min(v.values())
-    actions = list(Actions)
-    for a in actions:
+    best_action_name:str =""
+    
+    for a in env.actions:
         s_new, r = env.next_state(s,a)
 
         if s_new is not None and r is not None:
-            values.append(r + gamma * v[s_new])
+            values[a]=(r + gamma * v[s_new])
         else:
-            values.append(min_v - 1000)  #penalize impossible actions
-    best_idx = np.argmax(values)
+            values[a]=(min_v - 1000)  #penalize impossible actions
+    #find best action
+    best_action_name = max(values, key=lambda x: values[x])
     
     
-    return actions[best_idx]
+    return Actions[best_action_name]
 
-def greedy_q(env:MazeEnvironment, s:Position, q:dict[Position, dict[Actions,float]], gamma:float) -> Actions:
+def greedy_q(env:MazeEnvironment, s:Position, q:dict[Position, dict[str,float]], gamma:float) -> Actions:
     #return the action that maximizes the Q-value function in state s
-    values=[(q[s][a],a) for a in Actions if q[s][a] is not None]
+    if s not in q:
+        # Random action if no Q-values
+        return Actions[random.choice(list(env.actions.keys()))]
+    action_values = [(q[s][action_name], action_name) 
+                     for action_name in env.actions 
+                     if q[s].get(action_name) is not None]
+    if not action_values:
+        # Random action if no valid Q-values
+        return Actions[random.choice(list(env.actions.keys()))]
 
-    if not len(values):
-        actions=list(env.actions.keys())
-        return random.choice(list(Actions))
-    max_value = max(values, key=lambda x: x[0])
-    return max_value[1]
+    max_q_value, best_action_name = max(action_values, key=lambda x: x[0])
+    return Actions[best_action_name]
 
 def apply_policy(env:MazeEnvironment, policy:Callable, state:Position, gamma:float, values:dict[Position,float], pi:Optional[dict]=None) -> float:
     #apply the given policy starting from start_state for max_steps
@@ -250,17 +263,30 @@ def apply_policy(env:MazeEnvironment, policy:Callable, state:Position, gamma:flo
             action = pi[state]
         else:
             action = policy(env, state, values, gamma)
+        # Convert to string if needed
+        if isinstance(action, Actions):
+            action_name = action.name  # Actions.UP → 'UP'
+        else:
+            action_name = action
         
-        next_state, reward = env.next_state(state, action)
+        next_state, reward = env.next_state(state, action_name)
+
         if next_state is None or reward is None:
             break
+
         state = next_state
         gain+=(gamma**i)*reward
         i+=1
-        symbol=symbols[env.actions[action.name]]
-
-        env.board.ax.set_title(f"Gamma={gamma}, Gain={gain:.1f}")
+        
+        # update display
+        symbol = symbols[env.actions[action_name]]
+        env.board.ax.set_title(f"Gamma={gamma}, Gain={gain:.1f}, Step={i}")
         env.board.draw_agent(state(), symbol)
+        
+        
+        plt.pause(0.5) 
+        env.board.fig.canvas.draw()
+        env.board.fig.canvas.flush_events()
     return gain
 
 def in_range(s:str, rows_n:int, cols_n:int) -> bool:
@@ -359,7 +385,7 @@ if __name__ == "__main__":
     for s in env.states:
         if not board[s()].is_terminal():
             q[s] = {}
-            for a in Actions:
+            for a in ['UP', 'DOWN', 'LEFT', 'RIGHT']:
                 sn, _ = env.next_state(s,a)
                 if sn is not None:
                     q[s][a] = (-10)*random.random()
@@ -370,6 +396,7 @@ if __name__ == "__main__":
 
     mode = get_iteration_method()
     actions = list(env.actions.keys())
+    print(f"Calculating values...:{actions}")
 
     values: dict[Position, float] = v
     q_values = q
@@ -395,8 +422,9 @@ if __name__ == "__main__":
     env.board.ax.clear()
     env.board.ax.set_title("Board values preview")
     env.board.draw_board()
-    env.board.draw_values(values)
-    plt.pause(0.1)
+    env.board.draw_q_values(values)
+    plt.show()
+    plt.pause(0.5)
 
     print("Click on a cell to view it's action values.")
 
@@ -422,8 +450,8 @@ if __name__ == "__main__":
     for text in board.moves:
         text.remove()
     board.moves.clear()
-    
-    plt.pause(0.1)
+
+    plt.pause(0.5)
 
     try:
         print("usao u try")
@@ -432,9 +460,10 @@ if __name__ == "__main__":
             val = get_simulation_values()
 
             # Resets the board
-            [board.hide_text(text) for text in board.moves]
+            for text in board.moves:
+                text.remove()
             board.moves.clear()
-            plt.pause(0.1)
+            plt.pause(0.5)
 
             r, c = get_start_position(board.cells, board.rows_no, board.cols_no)
             s = Position(r,c)
@@ -443,7 +472,7 @@ if __name__ == "__main__":
             board.draw_board()
             board.ax.set_title(f"Gamma={gamma}, Gain={0}")
             board.draw_agent(s(), "+")
-            plt.pause(0.1)
+            plt.pause(0.5)
 
             # State values
             if val == 1:
@@ -453,8 +482,9 @@ if __name__ == "__main__":
                 gain = apply_policy(env, greedy_q, s, gamma, q_values, policy_q)
 
             # Shows all moves made in this run
-            [board.show_text(text) for text in board.moves]
-            plt.pause(0.1)
+            for text in board.moves:
+                text.set_visible(True)
+            plt.pause(0.5)
 
             print("Gain: " + str(gain)) 
 

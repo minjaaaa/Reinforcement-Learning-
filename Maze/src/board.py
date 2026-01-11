@@ -23,8 +23,8 @@ class MazeBoard():
         self.rows_no = rows
         self.cols_no = cols
         self.cells = cells
-        self.mouse_row = None
-        self.mouse_col = None
+        self.mouse_row: int =0
+        self.mouse_col: int =0
         
         # Saves all moves made by the agent in the explotation faze for visualization purposes
         self.moves = []
@@ -40,6 +40,7 @@ class MazeBoard():
         self.ax.set_yticks(np.arange(cols-1, -1, step=-1))
 
         self.fig.canvas.mpl_connect('button_press_event', self.onclick)
+        
     
     def __getitem__(self, key: tuple[int, int]) -> Cell:
         r, c = key
@@ -61,11 +62,25 @@ class MazeBoard():
         return rows_no, cols_no, cells
     
     def onclick(self, event):
-        x, y = event.xdata, event.ydata
-
-        if x is not None and y is not None:
-            self.mouse_row = math.floor(y)
-            self.mouse_col = math.floor(x)
+        """Handle mouse click events."""
+        # Only process clicks on the main axis
+        if event.inaxes != self.ax:
+            return
+        
+        # Get clicked position
+        if event.xdata is not None and event.ydata is not None:
+            col = int(event.xdata)
+            row = int(event.ydata)
+            print("Clicked at:", row, col)
+            
+            # Check bounds
+            if 0 <= row < self.rows_no and 0 <= col < self.cols_no:
+                self.mouse_row = row
+                self.mouse_col = col
+                print(f"Clicked on cell ({row}, {col})")
+            # Draw Q-values
+            print(f"Showing Q-values for cell ({row}, {col})")
+            board.draw_q_values(q_values)
     
     def int_to_cell(self, code:int, rows_no:int, cols_no:int) -> Cell:
         #Converts an integer code to a Cell object
@@ -77,7 +92,10 @@ class MazeBoard():
         elif code == 2:
             return WallCell()
         elif code == 3:
-            return TelCell(Position(random.randint(0, rows_no-1), random.randint(0, cols_no-1)))
+            return TelCell(Position(
+                random.randint(0, rows_no-1), 
+                random.randint(0, cols_no-1)
+                ))
         elif code == 4:
             return TermCell(reward=0.0)
         else:
@@ -126,7 +144,9 @@ class MazeBoard():
                     teleport_index += 1  
                 else:
                     board_img[i, j, :] = [255, 255, 0] # Terminal cell, YELLOW
-        self.ax.imshow(board_img, extent=(0, self.cols_no, self.rows_no, 0), origin="upper")
+        self.ax.imshow(board_img, extent=(0, self.cols_no, self.rows_no, 0), origin="upper", interpolation='nearest')
+        self.ax.figure.canvas.draw()
+        plt.pause(0.1)
 
     def hide_text(self, text):
         text.set_visible(False)
@@ -134,54 +154,106 @@ class MazeBoard():
     def show_text(self, text):
         text.set_visible(True)
 
-    def draw_values(self, values: dict[Position , float]):
-        if len(self.value_texts):
-            [self.hide_text(text) for text in self.value_texts]
-        else:
-            for s in values:                
-                text = self.ax.text(s.col+0.4, s.row+0.75, str(f"{values[s]:.1f}"), fontsize=10)
-                self.value_texts.append(text)
-    
-    def draw_q_values(self , q_values):
-        [self.hide_text(text) for text in self.value_texts]
-        [self.hide_text(text) for text in self.action_texts]
+    def draw_values(self, values: dict[Position, float]):
+        """Draw state values on the board."""
         
-        #if mouse is out of bounds, set to (0,0)
+        # Clear previous value texts
+        for text in self.value_texts:
+            text.remove()  # Actually remove from plot
+        self.value_texts.clear()  # Clear the list
+        
+        # Draw new values
+        for s in values:
+            text = self.ax.text(s.col+0.4, s.row+0.75, 
+                            f"{values[s]:.1f}",  # No need for str() wrapper
+                            fontsize=10, color='black',
+                            ha='center', va='center')
+            self.value_texts.append(text)
+        
+        # Update display
+        self.ax.figure.canvas.draw()
+        self.ax.figure.canvas.flush_events()
+    
+    def draw_q_values(self, q_values):
+        """Draw Q-values for the cell under the mouse."""
+        
+        # Clear previous texts
+        for text in self.value_texts:
+            text.remove()
+        self.value_texts.clear()
+        
+        for text in self.action_texts:
+            text.remove()
+        self.action_texts.clear()
+        
+        # Get mouse position (default to 0,0 if out of bounds)
         row = self.mouse_row if self.mouse_row is not None else 0
         col = self.mouse_col if self.mouse_col is not None else 0
         s = Position(row, col)
-
+        
         try:
-            #if the cell is not a teleport cell and has q_values
-            if s in q_values and not self[s.row, s.col].is_teleport():
+            # Check if position is valid and has Q-values
+            if s not in q_values:
+                return  # No Q-values for this position
+            
+            cell = self[s.row, s.col]
+            
+            # Handle regular cells (not teleport)
+            if not cell.is_teleport():
                 value_dict = q_values[s]
-                #chwcking boundings and if the action has a value
-                if 0<=s.row-1<self.rows_no and value_dict['UP'] is not None:
-                    text = self.ax.text(s.col+0.4, s.row-1+0.75, str(f"{value_dict['UP']:.1f}"), fontsize=10)
-                    if text not in self.action_texts:
-                        self.action_texts.append(text)
-                if 0<=s.row+1<self.rows_no and value_dict['DOWN'] is not None:
-                    text = self.ax.text(s.col+0.4, s.row+1+0.75, str(f"{value_dict['DOWN']:.1f}"), fontsize=10)
-                    if text not in self.action_texts:
-                        self.action_texts.append(text)
-                if 0<=s.col-1< self.cols_no and value_dict['LEFT'] is not None:
-                    text = self.ax.text(s.col-1+0.4, s.row+0.75, str(f"{value_dict['LEFT']:.1f}"), fontsize=10)
-                    if text not in self.action_texts:
-                        self.action_texts.append(text)
-                if 0<=s.col+1<self.cols_no and value_dict['RIGHT'] is not None:
-                    text = self.ax.text(s.col+1+0.4, s.row+0.75, str(f"{value_dict['RIGHT']:.1f}"), fontsize=10)
-                    if text not in self.action_texts:
-                        self.action_texts.append(text)
-            elif self[s.row, s.col].is_teleport():
-                cell = self[s.row, s.col]
-                if isinstance(cell, TelCell):
-                    next_state = cell.get_next_cell()
-                    print(f"Q_values: {q_values[s]}")
-                    text = self.ax.text(next_state.col+0.4, next_state.row+0.75, str(f"{q_values[s]['UP']:.1f}"), fontsize=10)
-                    if text not in self.action_texts:
-                        self.action_texts.append(text)
+                
+                # UP
+                if 0 <= s.row - 1 < self.rows_no and value_dict.get('UP') is not None:
+                    text = self.ax.text(s.col+0.4, s.row-1+0.75, 
+                                    f"{value_dict['UP']:.1f}",
+                                    fontsize=10, color='blue',
+                                    ha='center', va='center')
+                    self.action_texts.append(text)
+                
+                # DOWN
+                if 0 <= s.row + 1 < self.rows_no and value_dict.get('DOWN') is not None:
+                    text = self.ax.text(s.col+0.4, s.row+1+0.75, 
+                                    f"{value_dict['DOWN']:.1f}",
+                                    fontsize=10, color='blue',
+                                    ha='center', va='center')
+                    self.action_texts.append(text)
+                
+                # LEFT
+                if 0 <= s.col - 1 < self.cols_no and value_dict.get('LEFT') is not None:
+                    text = self.ax.text(s.col-1+0.4, s.row+0.75, 
+                                    f"{value_dict['LEFT']:.1f}",
+                                    fontsize=10, color='blue',
+                                    ha='center', va='center')
+                    self.action_texts.append(text)
+                
+                # RIGHT
+                if 0 <= s.col + 1 < self.cols_no and value_dict.get('RIGHT') is not None:
+                    text = self.ax.text(s.col+1+0.4, s.row+0.75, 
+                                    f"{value_dict['RIGHT']:.1f}",
+                                    fontsize=10, color='blue',
+                                    ha='center', va='center')
+                    self.action_texts.append(text)
+            
+            # Handle teleport cells
+            elif isinstance(cell, TelCell):
+                next_state = cell.get_next_cell()
+                
+                if next_state is not None:
+                    print(f"Q-values for teleport at {s}: {q_values[s]}")
+                    
+                    # Show value at destination
+                    text = self.ax.text(next_state.col+0.4, next_state.row+0.75,
+                                    f"{q_values[s].get('UP', 0):.1f}",
+                                    fontsize=10, color='magenta',
+                                    ha='center', va='center')
+                    self.action_texts.append(text)
+            
+            # Update display
+            self.ax.figure.canvas.draw()
+            self.ax.figure.canvas.flush_events()
+            
         except Exception as e:
-            print(e)
+            print(f"Error in draw_q_values: {e}")
     
     def draw_agent(self, pos=(0,0), avatar="*"):
         row, col = pos
@@ -201,6 +273,7 @@ class MazeBoard():
                     if cell.is_teleport():
                         dest = cell.get_next_cell()
                         print(f"Teleport at ({row},{col}) → destination ({dest.row},{dest.col})")
+    
 
 if __name__ == "__main__":
     board = MazeBoard(10, 10)

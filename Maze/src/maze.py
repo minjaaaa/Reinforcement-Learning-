@@ -9,6 +9,7 @@ from cells import Cell, TelCell, Position, Actions, RegCell
 from typing import Optional, Callable
 random = Random()
 running = Event()
+import time
 
 class MazeEnvironment():
 
@@ -108,6 +109,12 @@ class MazeEnvironment():
 
     def update_state_value(self, s:Position, v:dict[Position,float], gamma:float, actions: list[str]) -> float:
         #return max value - iterating over all possible actions
+        cell = self.board[s()]
+        if self.board[s()].is_teleport():
+            cell = self.board[s()]
+            if isinstance(cell, TelCell):
+                next_state = cell.get_next_cell()
+                return cell.get_reward() + gamma * v[next_state]
         values=[]
         for a in actions:
             next_state, reward = self.next_state(s, a)
@@ -122,15 +129,20 @@ class MazeEnvironment():
         #return updated state values for all states by following the given policy
         values = copy.deepcopy(v)
         for s in self.states:
-            if not self.board[s()].is_terminal():
-                actions = [action for action in self.actions if action in policy[s]]
+            if self.board[s()].is_terminal():
+                continue
+            #if not self.board[s()].is_terminal():
+            #    actions = [action for action in self.actions if action in policy.get(s, [])]
 
-                if self.board[s()].is_teleport():
-                    cell = self.board[s()]
-                    if isinstance(cell, TelCell):
-                        next_state = cell.get_next_cell()
-                        actions = [action for action in self.actions if action in policy[next_state]]
-                values[s] = self.update_state_value(s, v, gamma, actions)
+            #    if self.board[s()].is_teleport():
+            #        cell = self.board[s()]
+            #        if isinstance(cell, TelCell):
+            #            next_state = cell.get_next_cell()
+            #            if not self.board[next_state()].is_terminal():
+            #                actions = [action for action in self.actions if action in policy[next_state]]
+            #    values[s] = self.update_state_value(s, v, gamma, actions)
+            actions = [a for a in self.actions if a in policy.get(s, [])]
+            values[s] = self.update_state_value(s, v, gamma, actions)
         return values
     
     def update_action_value(self, s:Position, a:str, q:dict[Position, dict[str, float]], gamma:float, policy:dict)->float:
@@ -353,7 +365,8 @@ def get_board() -> MazeBoard:
         if continue_question("Do you want to continue? (y/n): "):
             return board
         
-        plt.close()
+        #plt.close()
+        plt.close(board.fig)
 
 def continue_question(msg:str) -> bool:
     prompts = chain([msg], \
@@ -396,7 +409,7 @@ if __name__ == "__main__":
 
     mode = get_iteration_method()
     actions = list(env.actions.keys())
-    print(f"Calculating values...:{actions}")
+    #print(f"Calculating values...:{actions}")
 
     values: dict[Position, float] = v
     q_values = q
@@ -418,13 +431,56 @@ if __name__ == "__main__":
 
         policy_v, values = policy_iteration(env, env.update_all_state_values, v, policy, greedy, gamma, eps)
         policy_q, q_values = policy_iteration(env, env.update_all_action_values, q, policy, greedy_q, gamma, eps)
+    #plt.ion()
+    # Ensure interactive mode is on
+    #if not plt.isinteractive():
+    #    print("Enabling interactive mode...")
+    #    plt.ion()
+
+    # Clear and prepare board
+    board.ax.clear()
+    plt.close('all')
+
+    max_w, max_h = 8, 6
+    aspect = board.cols_no / board.rows_no
+
+    if aspect >= max_w / max_h:
+        fig_width = max_w
+        fig_height = max_w / aspect
+    else:
+        fig_height = max_h
+        fig_width = max_h * aspect
+
+    board.fig, board.ax = plt.subplots(figsize=(fig_width, fig_height))
     plt.ion()
-    env.board.ax.clear()
-    env.board.ax.set_title("Board values preview")
-    env.board.draw_board()
-    env.board.draw_q_values(values)
-    plt.show()
-    plt.pause(0.5)
+    board.draw_board()
+    board.ax.set_title("Board values preview")
+
+    print("Drawing values...")
+    board.draw_values(values)
+    #print(len(board.ax.texts))
+
+    #print(board.fig)
+    #print(plt.get_fignums())   # lista aktivnih figura
+    #print(board.ax)
+    plt.show(block=False)
+    plt.pause(0.1)
+
+    
+
+    # Make absolutely sure figure is visible
+    #board.fig.set_visible(True)
+
+    # Show the figure explicitly
+    try:
+        #board.fig.show()
+        print("✓ Figure.show() called")
+    except Exception as e:
+        print(f"Figure.show() failed: {e}")
+
+    max_attempts = 10
+    print("Window should be visible now")
+
 
     print("Click on a cell to view it's action values.")
 
@@ -495,4 +551,4 @@ if __name__ == "__main__":
         running.clear()
 
     plt.close('all')
-    print("EXITED")
+    print("END")

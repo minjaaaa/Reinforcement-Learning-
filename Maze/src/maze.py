@@ -145,7 +145,7 @@ class MazeEnvironment():
             values[s] = self.update_state_value(s, v, gamma, actions)
         return values
     
-    def update_action_value(self, s:Position, a:str, q:dict[Position, dict[str, float]], gamma:float, policy:dict)->float:
+    def update_action_value(self, s:Position, a:str, q:dict[Position, dict[str, float]], gamma:float, policy:Optional[dict] = None)->float:
         #return updated Q-value for state s and action a 
         q_values: list[float] = []
         next_state, reward = self.next_state(s, a)
@@ -154,19 +154,30 @@ class MazeEnvironment():
         elif self.board[next_state()].is_terminal():
             return 0
         
-        # normalize allowed actions for this next_state (policy may be list or dict)
-        allowed = policy.get(next_state, [])
-        allowed_actions = set(allowed.keys()) if isinstance(allowed, dict) else set(allowed)
+        allowed = []
+        if policy is None or len(policy) == 0:  # ← Dodaj proveru
+            # if no policy given - all actions are allowed
+            allowed_actions = set(self.actions.keys())
+        else:
+            # have policy - only actions allowed by it
+            allowed = policy.get(next_state, [])
+        
+        if isinstance(allowed, dict):
+            allowed_actions = set(allowed.keys())
+        elif isinstance(allowed, list):
+            allowed_actions = set(allowed)
+        elif isinstance(allowed, str):
+            allowed_actions = {allowed}
+        else:
+            # Default: SVE akcije
+            allowed_actions = set(self.actions.keys())
 
-        for an in self.actions:
-            if allowed_actions and an not in allowed_actions:
-                continue
-            q_val = q[next_state].get(an)
-            if q_val is None:
-                continue
-            if next_state is not None and reward is not None:
+        # Računaj Q-vrednost
+        for action_name in allowed_actions:
+            q_val = q[next_state].get(action_name)
+            if q_val is not None and reward is not None:
                 q_values.append(reward + gamma * q_val)
-        #if no actions were possible return small value or None
+        
         return max(q_values) if q_values else 0.0
     
     def update_all_action_values(self, q:dict[Position, dict[str,float]], gamma:float, policy:dict)->dict[Position,dict[str,float]]:
@@ -215,21 +226,23 @@ def value_iteration(update:Callable, values: dict, gamma:float, eps:float, itera
     print(f"Value iteration did not converge after {iterations} iterations. Final error: {error}")
     return new_values
 
-def policy_iteration(env: MazeEnvironment, update:Callable, values:dict, policy:dict, update_policy:Callable, gamma:float, eps:float, iterations:int = 100) -> tuple[dict, dict[Position,float]]:
+def policy_iteration(env: MazeEnvironment, update:Callable, values:dict, policy:Optional[dict], update_policy:Callable, gamma:float, eps:float, iterations:int = 100) -> tuple[dict, dict[Position,float]]:
     #perform policy iteration for a given number of iterations or until convergence
+    if policy is None:
+        policy = {}
     new_values = copy.deepcopy(values)
     
     for i in range(iterations):
         old_values = copy.deepcopy(new_values)
         new_values= value_iteration(update, old_values, gamma, eps, iterations, policy=policy)
         new_policy = {s:update_policy(env, s, new_values, gamma).name for s in env.states}
-        if policy == new_policy:
+        if policy == new_policy and policy is not None:
             print(f"Policy iteration converged after {i} iterations.")
             return policy, new_values
         policy = new_policy
     #policy did not converge
     print(f"Policy iteration did not converge after {iterations} iterations.")
-    return policy, new_values
+    return policy, new_values if policy is not None else {}
 
 def greedy(env:MazeEnvironment, s:Position, v:dict[Position,float], gamma:float) -> Actions:
     #return the action that maximizes the value function in state s
@@ -381,6 +394,14 @@ def continue_question(msg:str) -> bool:
         return True
     return False
 
+
+# Event handler za tastaturu
+def on_key(event):
+    if event.key == 'q':
+        print("\nExiting Q-value exploration...")
+        exploring[0] = False
+        plt.close(board.fig)
+
 if __name__ == "__main__":
     running.set()
 
@@ -427,10 +448,13 @@ if __name__ == "__main__":
         q_values = value_iteration(env.update_all_action_values, q, gamma, eps, policy=policy)
     elif mode == 2:
         # When policy iteraton is used only actions defined by the policy are possible
-        policy = {s: random.choice(actions) for s in env.states if not board[s()].is_terminal()}
+        policy_v_init = {s: random.choice(list(env.actions.keys())) for s in env.states if not board[s()].is_terminal()}
 
-        policy_v, values = policy_iteration(env, env.update_all_state_values, v, policy, greedy, gamma, eps)
-        policy_q, q_values = policy_iteration(env, env.update_all_action_values, q, policy, greedy_q, gamma, eps)
+        print("Calculating state values with policy iteration...")
+        policy_v, values = policy_iteration(env, env.update_all_state_values, v, policy_v_init, greedy,gamma,eps)
+        print("Calculating Q-values with policy iteration...")
+        policy_q, q_values = policy_iteration(env,env.update_all_action_values,q,None, greedy_q, gamma, eps)
+
     #plt.ion()
     # Ensure interactive mode is on
     #if not plt.isinteractive():
@@ -456,7 +480,7 @@ if __name__ == "__main__":
     board.draw_board()
     board.ax.set_title("Board values preview")
 
-    print("Drawing values...")
+    #print("Drawing values...")
     board.draw_values(values)
     #print(len(board.ax.texts))
 
@@ -466,10 +490,6 @@ if __name__ == "__main__":
     plt.show(block=False)
     plt.pause(0.1)
 
-    
-
-    # Make absolutely sure figure is visible
-    #board.fig.set_visible(True)
 
     # Show the figure explicitly
     try:
@@ -478,11 +498,25 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Figure.show() failed: {e}")
 
-    max_attempts = 10
-    print("Window should be visible now")
-
-
     print("Click on a cell to view it's action values.")
+    print("Press 'q' to continue.")
+    print("="*60 + "\n")
+
+    # Flag za kontrolu
+    exploring = [True]
+
+    def on_click_wrapper(event):
+        board.on_mouse_click(event, q_values)
+
+    def on_key(event):
+        if event.key == 'q':
+            print("\nExiting Q-value exploration...")
+            exploring[0] = False
+            plt.close(board.fig)
+
+    click_cid = board.fig.canvas.mpl_connect('button_press_event', on_click_wrapper)
+    key_cid = board.fig.canvas.mpl_connect('key_press_event', on_key)
+
 
     while 1:
         res = plt.waitforbuttonpress(8)
@@ -494,6 +528,12 @@ if __name__ == "__main__":
         if board.mouse_col is not None and board.mouse_row is not None:
             board.draw_q_values(q_values)
             plt.pause(0.01)
+        if not exploring[0]:
+            break
+    board.fig.canvas.mpl_disconnect(click_cid)
+    board.fig.canvas.mpl_disconnect(key_cid)
+
+    print("Continuing to simulation...")
     
     for text in board.value_texts:
         text.remove()
@@ -510,9 +550,9 @@ if __name__ == "__main__":
     plt.pause(0.5)
 
     try:
-        print("usao u try")
+        #print("usao u try")
         while running.is_set():
-            print("usao u while")
+            #print("usao u while")
             val = get_simulation_values()
 
             # Resets the board

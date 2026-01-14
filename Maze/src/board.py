@@ -80,7 +80,29 @@ class MazeBoard():
                 
             # Draw Q-values
             print(f"Showing Q-values for cell ({row}, {col})")
-            board.draw_q_values(q_values)
+            self.draw_q_values(q_values)
+
+    def on_mouse_click(self, event, q_values):
+        """Handle mouse click events."""
+        # Only process clicks on the main axis
+        if event.inaxes != self.ax:
+            return
+        
+        # Get clicked position
+        if event.xdata is not None and event.ydata is not None:
+            col = int(event.xdata)
+            row = int(event.ydata)
+            
+            # Check bounds
+            if 0 <= row < self.rows_no and 0 <= col < self.cols_no:
+                self.mouse_row = row
+                self.mouse_col = col
+                
+                # Draw Q-values
+                print(f"Showing Q-values for cell ({row}, {col})")
+                self.draw_q_values(q_values)
+    
+    
     
     def int_to_cell(self, code:int, rows_no:int, cols_no:int) -> Cell:
         #Converts an integer code to a Cell object
@@ -144,9 +166,31 @@ class MazeBoard():
                     teleport_index += 1  
                 else:
                     board_img[i, j, :] = [255, 255, 0] # Terminal cell, YELLOW
-        self.ax.set_aspect("equal", adjustable="box")
-        self.ax.imshow(board_img, extent=(0, self.cols_no, self.rows_no, 0), origin="upper", interpolation='nearest',zorder=0)
         
+        self.ax.imshow(board_img, extent=(0, self.cols_no, self.rows_no, 0), origin="upper", interpolation='nearest',aspect='equal',zorder=0)
+        self.ax.set_xticks(np.arange(0, self.cols_no + 1, 1), minor=True)
+        self.ax.set_yticks(np.arange(0, self.rows_no + 1, 1), minor=True)
+        self.ax.grid(which='minor', color='gray', linestyle='-', linewidth=1, zorder=5)
+        
+        # Major ticks for labels (at cell centers)
+        self.ax.set_xticks(np.arange(0, self.cols_no, 1))
+        self.ax.set_yticks(np.arange(0, self.rows_no, 1))
+        
+        # Set axis labels
+        self.ax.set_xticklabels([str(i) for i in range(self.cols_no)])
+        self.ax.set_yticklabels([str(i) for i in range(self.rows_no)])
+        
+        # Set axis limits
+        self.ax.set_xlim(0, self.cols_no)
+        self.ax.set_ylim(self.rows_no, 0)
+        
+        # Labels
+        self.ax.set_xlabel('Column')
+        self.ax.set_ylabel('Row')
+        
+        # Update display
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
 
     def hide_text(self, text):
         text.set_visible(False)

@@ -33,5 +33,5 @@ CART_W, CART_H = 60, 30
 ALPHA = 0.3        # learning rate (increased)
 GAMMA = 0.95       # discount factor
 EPSILON_START = 1.0
-EPSILON_MIN = 0.015
+EPSILON_MIN = 0.01
 EPSILON_DECAY = 0.999

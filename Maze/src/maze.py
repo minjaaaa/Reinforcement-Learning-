@@ -13,7 +13,7 @@ import time
 
 class MazeEnvironment():
 
-    def __init__(self, board:MazeBoard):
+    def __init__(self, board:MazeBoard, ):
         self.board = board
         self.states = self.init_states()
         self.actions = self.init_actions()
@@ -380,6 +380,93 @@ def get_board() -> MazeBoard:
         
         #plt.close()
         plt.close(board.fig)
+def draw_policy(env, policy, ax=None, title="Optimal Policy"):
+    """
+    Vizualizuj policy sa strelicama na svakoj ćeliji.
+    
+    Args:
+        env: MazeEnvironment objekat
+        policy: dict {Position: action_name} ili {Position: Actions}
+        ax: matplotlib axes (opcionalno, kreira novi ako nije prosleđen)
+        title: Naslov plota
+    """
+
+    
+    # Kreiraj axes ako nije prosleđen
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 10))
+    else:
+        fig = ax.figure
+    
+    board = env.board
+    
+    # Nacrtaj tablu (pozadina sa bojama)
+    board_img = np.ones((board.rows_no, board.cols_no, 3), dtype=np.uint8)
+    teleport_index = 0
+
+    
+    # Prikaži sliku table
+    ax.imshow(board_img, 
+             extent=(0, board.cols_no, board.rows_no, 0),
+             origin='upper',
+             interpolation='nearest',
+             aspect='equal',
+             zorder=1)
+    
+    # Mapa akcija na simbole strelica
+    action_symbols = {
+        'UP': '↑',
+        'DOWN': '↓',
+        'LEFT': '←',
+        'RIGHT': '→'
+    }
+    
+    # Nacrtaj policy strelice
+    for s, action in policy.items():
+        # Konvertuj action u string ako je Actions enum
+        if isinstance(action, Actions):
+            action_name = action.name
+        else:
+            action_name = action
+        
+        # Dobavi simbol strelice
+        symbol = action_symbols.get(action_name, '?')
+        
+        # Nacrtaj strelicu u centru ćelije
+        ax.text(s.col + 0.5, s.row + 0.5,
+               symbol,
+               fontsize=20,
+               fontweight='bold',
+               color='black',
+               ha='center',
+               va='center',
+               zorder=10)
+    
+    # Podesi grid
+    ax.set_xticks(np.arange(0, board.cols_no + 1, 1), minor=True)
+    ax.set_yticks(np.arange(0, board.rows_no + 1, 1), minor=True)
+    ax.grid(which='minor', color='gray', linestyle='-', linewidth=1, zorder=5)
+    
+    # Postavi major ticks
+    ax.set_xticks(range(board.cols_no))
+    ax.set_yticks(range(board.rows_no))
+    
+    # Labele osa
+    ax.set_xlabel('Column', fontsize=12)
+    ax.set_ylabel('Row', fontsize=12)
+    
+    # Naslov
+    ax.set_title(title, fontsize=14, fontweight='bold')
+    
+    # Postavi limite
+    ax.set_xlim(0, board.cols_no)
+    ax.set_ylim(board.rows_no, 0)
+    
+    # Ažuriraj prikaz
+    fig.canvas.draw()
+    fig.canvas.flush_events()
+    
+    return fig, ax
 
 def continue_question(msg:str) -> bool:
     prompts = chain([msg], \
@@ -401,6 +488,7 @@ def on_key(event):
         print("\nExiting Q-value exploration...")
         exploring[0] = False
         plt.close(board.fig)
+
 
 if __name__ == "__main__":
     running.set()
@@ -454,13 +542,47 @@ if __name__ == "__main__":
         policy_v, values = policy_iteration(env, env.update_all_state_values, v, policy_v_init, greedy,gamma,eps)
         print("Calculating Q-values with policy iteration...")
         policy_q, q_values = policy_iteration(env,env.update_all_action_values,q,None, greedy_q, gamma, eps)
+        #draw_policy(env, policy_v, title="Optimal Policy - Value Iteration")
+    print("#################################################")
+    print("\n" + "="*60)
+    print("DIAGNOSTIC CHECK")
+    print("="*60)
 
-    #plt.ion()
-    # Ensure interactive mode is on
-    #if not plt.isinteractive():
-    #    print("Enabling interactive mode...")
-    #    plt.ion()
+    # 1. Proveri mode
+    print(f"Mode: {mode}")
 
+    # 2. Proveri da li su vrednosti izračunate
+    if 'values' in locals():
+        print(f"✓ Values exist: {len(values)} states")
+    else:
+        print("✗ Values DO NOT exist")
+
+    # 3. Proveri policy
+    if 'policy_v' in locals():
+        print(f"Policy_v type: {type(policy_v)}")
+        
+        if policy_v is None:
+            print("✗ ERROR: policy_v is None!")
+        elif not policy_v:
+            print("✗ WARNING: policy_v is empty dict")
+        else:
+            print(f"✓ policy_v exists: {len(policy_v)} states")
+            
+            # Prikaži sample
+            sample_states = list(policy_v.items())[:3]
+            for s, a in sample_states:
+                print(f"  {s} → {a}")
+    else:
+        print("✗ ERROR: policy_v variable does not exist!")
+
+    print("="*60 + "\n")
+
+    # Sada pozovi draw_policy SAMO ako policy postoji
+    if 'policy_v' in locals() and policy_v is not None and policy_v:
+        draw_policy(env, policy_v)
+    else:
+        print("Skipping draw_policy - policy not available")
+    print("#################################################")
     # Clear and prepare board
     board.ax.clear()
     plt.close('all')
@@ -508,12 +630,6 @@ if __name__ == "__main__":
     def on_click_wrapper(event):
         board.on_mouse_click(event, q_values)
 
-    def on_key(event):
-        if event.key == 'q':
-            print("\nExiting Q-value exploration...")
-            exploring[0] = False
-            plt.close(board.fig)
-
     click_cid = board.fig.canvas.mpl_connect('button_press_event', on_click_wrapper)
     key_cid = board.fig.canvas.mpl_connect('key_press_event', on_key)
 
@@ -546,7 +662,6 @@ if __name__ == "__main__":
     for text in board.moves:
         text.remove()
     board.moves.clear()
-
     plt.pause(0.5)
 
     try:
@@ -554,7 +669,7 @@ if __name__ == "__main__":
         while running.is_set():
             #print("usao u while")
             val = get_simulation_values()
-
+            #draw_policy(env, policy_v if mode == 1 else policy_q, ax=board.ax, title="Optimal Policy")
             # Resets the board
             for text in board.moves:
                 text.remove()
@@ -591,4 +706,4 @@ if __name__ == "__main__":
         running.clear()
 
     plt.close('all')
-    print("END")
+    print("END OF GAME")

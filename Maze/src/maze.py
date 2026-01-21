@@ -380,7 +380,7 @@ def get_board() -> MazeBoard:
         
         #plt.close()
         plt.close(board.fig)
-def draw_policy(env, policy, ax=None, title="Optimal Policy"):
+def draw_policy(env, board, policy, ax=None, title="Optimal Policy"):
     """
     Vizualizuj policy sa strelicama na svakoj ćeliji.
     
@@ -398,14 +398,14 @@ def draw_policy(env, policy, ax=None, title="Optimal Policy"):
     else:
         fig = ax.figure
     
-    board = env.board
+    board =board
     
-    # Nacrtaj tablu (pozadina sa bojama)
-    board_img = np.ones((board.rows_no, board.cols_no, 3), dtype=np.uint8)
-    teleport_index = 0
-
+    # Clear the axes first
+    ax.clear()
     
-    # Prikaži sliku table
+    # Draw the actual board using the board's draw method
+    # This will draw walls, terminals, teleports, etc. with proper colors
+    board_img = board.generate_image()
     ax.imshow(board_img, 
              extent=(0, board.cols_no, board.rows_no, 0),
              origin='upper',
@@ -437,7 +437,7 @@ def draw_policy(env, policy, ax=None, title="Optimal Policy"):
                symbol,
                fontsize=20,
                fontweight='bold',
-               color='black',
+               color='blue',
                ha='center',
                va='center',
                zorder=10)
@@ -576,13 +576,26 @@ if __name__ == "__main__":
         print("✗ ERROR: policy_v variable does not exist!")
 
     print("="*60 + "\n")
-
-    # Sada pozovi draw_policy SAMO ako policy postoji
-    if 'policy_v' in locals() and policy_v is not None and policy_v:
-        draw_policy(env, policy_v)
-    else:
-        print("Skipping draw_policy - policy not available")
-    print("#################################################")
+    
+    
+    # Visualize policy before moving to values display
+    if mode == 2 and policy_v is not None and policy_v:
+        print("\n" + "="*60)
+        print("VISUALIZING OPTIMAL POLICY")
+        print("="*60)
+        
+        # Create a new figure for policy visualization
+        fig_policy, ax_policy = plt.subplots(figsize=(10, 10))
+        draw_policy(env, board, policy_v, ax=ax_policy, title="Optimal Policy - Policy Iteration")
+        plt.show(block=False)
+        plt.pause(0.1)
+        
+        if continue_question("View policy visualization? Press enter to continue... (y/n): "):
+            plt.pause(2)
+        
+        plt.close(fig_policy)
+        print("="*60 + "\n")
+    
     # Clear and prepare board
     board.ax.clear()
     plt.close('all')

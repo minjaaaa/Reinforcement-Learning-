@@ -102,7 +102,49 @@ class MazeBoard():
                 print(f"Showing Q-values for cell ({row}, {col})")
                 self.draw_q_values(q_values)
     
-    
+    def generate_image(self) -> np.ndarray:
+        """
+        Generate an RGB image representation of the board.
+        
+        Returns:
+            np.ndarray: RGB image array with shape (rows, cols, 3)
+        """
+        # Create empty RGB image (white background)
+        img = np.ones((self.rows_no, self.cols_no, 3), dtype=np.uint8) * 255
+        
+        # Define colors for different cell types
+        colors = {
+            'wall': np.array([50, 50, 50], dtype=np.uint8),        # Dark gray
+            'regular': np.array([255, 255, 255], dtype=np.uint8),  # White
+            'terminal_positive': np.array([0, 255, 0], dtype=np.uint8),  # Green
+            'terminal_negative': np.array([255, 0, 0], dtype=np.uint8),  # Red
+            'teleport': np.array([255, 255, 0], dtype=np.uint8),   # Yellow
+            'start': np.array([173, 216, 230], dtype=np.uint8)     # Light blue
+        }
+        
+        # Fill each cell with appropriate color
+        for r in range(self.rows_no):
+            for c in range(self.cols_no):
+                cell = self.cells[r][c]
+                
+                if not cell.is_steppable():
+                    # Wall
+                    img[r, c] = colors['wall']
+                elif cell.is_terminal():
+                    # Terminal cell (positive or negative reward)
+                    reward = cell.get_reward()
+                    if reward > 0:
+                        img[r, c] = colors['terminal_positive']
+                    else:
+                        img[r, c] = colors['terminal_negative']
+                elif hasattr(cell, 'tel_dest') and cell.teleport is not None:
+                    # Teleport cell
+                    img[r, c] = colors['teleport']
+                else:
+                    # Regular cell
+                    img[r, c] = colors['regular']
+        
+        return img
     
     def int_to_cell(self, code:int, rows_no:int, cols_no:int) -> Cell:
         #Converts an integer code to a Cell object

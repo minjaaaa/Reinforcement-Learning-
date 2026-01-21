@@ -1,0 +1,35 @@
+Tic-Tac-Toe Value-Iteration Agent
+=================================
+
+Basic principle:
+- Solve Tic-Tac-Toe as an MDP and learn a policy with value iteration (Bellman backups over all reachable board states).
+- Opponent behavior is modeled either as uniform random moves or as a deterministic heuristic player; the agent learns best responses under that model.
+- The value function V(s) and greedy policy pi(s) are stored and can be reused for play and evaluation.
+
+Project organisation:
+- game_state.py: board logic, terminal checks, state generation.
+- opponent_policies.py: random, heuristic, and simple heuristic opponents.
+- value_iteration_agent.py: value iteration loop, policy extraction, save/load of learned policy.
+- evaluation.py: bulk simulation and text reports.
+- main.py: CLI wrapper that orchestrates training, evaluation, full pipeline, and interactive play.
+
+How to run (Python 3)
+- Train vs random:        python main.py --train random --role X --iterations 1000
+- Train vs heuristic:     python main.py --train heuristic --role O --iterations 1000
+- Train both roles:       python main.py --train random --role both
+- Evaluate saved agents:  python main.py --evaluate --games 1000
+- Full train+eval:        python main.py --full-pipeline --iterations 1000 --games 1000
+- Play against an agent:  python main.py --play --agent-file agent_vs_random_X.pkl
+  (If no file is given, a quick agent is trained on the fly.)
+
+Run python main.py --help for details
+
+
+Artifacts
+- Policies are saved as .pkl files (value function + policy + training settings).
+- Training stats are saved as *_stats.json.
+- Evaluation reports are written as *_report.txt with win/loss/draw breakdowns for each opponent and move order.
+
+Notes
+- Roles: X moves first, O second. Use --role to choose which side the agent learns.
+- Gamma controls reward discounting; theta sets the convergence tolerance. Lower theta means tighter convergence but longer runs.

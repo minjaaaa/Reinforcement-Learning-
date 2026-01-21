@@ -1,0 +1,259 @@
+================================================================================
+                         MAZE REINFORCEMENT LEARNING PROJECT
+================================================================================
+
+PROJECT: Grid-based Maze Environment with RL Algorithms
+IMPLEMENTS: Value Iteration, Policy Iteration, Greedy Policies
+VISUALIZATION: Interactive matplotlib-based board with agent simulation
+
+================================================================================
+1. PROJECT STRUCTURE
+================================================================================
+
+Maze/
+├── README.md
+└── src/
+    ├── maze.py         # Main RL algorithms and environment logic
+    ├── board.py        # MazeBoard class for visualization and rendering
+    ├── cells.py        # Cell types and state representation
+    └── __pycache__/    # Python bytecode cache
+
+================================================================================
+2. CORE COMPONENTS
+================================================================================
+
+2.1 CELLS.PY - State Representation
+------------------------------------
+Defines the maze cell hierarchy and state structure:
+
+    Position (dataclass, frozen):
+        - row: int
+        - col: int
+        - Immutable position representation
+        - Callable: returns tuple (row, col)
+
+    Actions (Enum):
+        - UP = 0
+        - DOWN = 1
+        - LEFT = 2
+        - RIGHT = 3
+
+    Cell (Abstract Base Class):
+        Properties:
+        - reward: float
+        - steppable: bool
+        - terminal: bool
+        - teleport: bool
+        
+        Methods:
+        - get_reward() -> float
+        - is_steppable() -> bool
+        - is_terminal() -> bool
+        - is_teleport() -> bool
+        - get_next_cell() -> Optional[Position]
+
+    Cell Types:
+        1. RegCell (Regular Cell):
+           - reward: -1 (normal) or -10 (penalty)
+           - steppable: True
+           - Color: WHITE (normal) or RED (penalty)
+
+        2. TermCell (Terminal/Goal Cell):
+           - reward: 0
+           - steppable: True
+           - terminal: True
+           - Color: YELLOW
+
+        3. WallCell (Obstacle):
+           - reward: 0
+           - steppable: False
+           - Color: BLACK
+
+        4. TelCell (Teleport Cell):
+           - Stores destination Position
+           - Transports agent to another cell
+           - Color: BLUE
+           - Labeled with index numbers
+
+2.2 BOARD.PY - Environment Visualization
+-----------------------------------------
+MazeBoard class manages the grid visualization and rendering:
+
+    Initialization:
+        - Randomly generates cells with distribution:
+          * 67% regular cells (reward=-1)
+          * 13% penalty cells (reward=-10)
+          * 13% wall cells
+          * 7% teleport cells
+        - Places one random terminal cell
+        - Sets up matplotlib figure and axes
+        - Connects mouse click events
+
+    Key Features:
+        - Interactive board with mouse click handling
+        - Draws cell types with color coding
+        - Displays state values on cells
+        - Shows action arrows (↑, ↓, ←, →) for policy
+        - Renders Q-values for each action
+        - Visualizes agent movement with animation
+        - Tracks teleport connections with index labels
+
+    Main Methods:
+        - draw_board(): Renders the maze grid
+        - draw_values(values): Displays state values V(s)
+        - draw_actions(policy): Shows optimal actions as arrows
+        - draw_q_values(q_values): Displays Q(s,a) for all actions
+        - draw_agent(position, symbol): Animates agent movement
+        - onclick(event): Handles mouse clicks for cell inspection
+
+2.3 MAZE.PY - RL Algorithms
+----------------------------
+MazeEnvironment class and core RL functions:
+
+    MazeEnvironment:
+        - Wraps MazeBoard for RL operations
+        - Extracts valid states (steppable positions)
+        - Processes teleport cells and assigns rewards
+        - Manages state transitions and action effects
+
+        Key Methods:
+            - init_states(): Returns list of valid positions
+            - init_actions(): Returns action dictionary
+            - next_state(s, a): Returns (next_position, reward)
+            - update_state_value(s, v, gamma, actions): Bellman update for V(s)
+            - update_all_state_values(v, gamma, policy): Updates all V(s)
+            - update_action_value(s, a, q, gamma, policy): Updates Q(s,a)
+            - update_all_action_values(q, gamma, policy): Updates all Q(s,a)
+
+    Algorithms Implemented:
+
+        A) VALUE ITERATION
+           - Iteratively applies Bellman optimality equation
+           - V(s) = max_a [R(s,a) + γ * V(s')]
+           - Converges to optimal value function V*
+           - Stops when max error < epsilon
+
+        B) POLICY ITERATION
+           - Two-phase algorithm:
+             1. Policy Evaluation: compute V^π(s)
+             2. Policy Improvement: π'(s) = argmax_a Q^π(s,a)
+           - Alternates until policy converges
+           - Often faster than value iteration
+
+        C) GREEDY POLICY
+           - greedy(env, s, v, gamma): 
+             Returns action maximizing V(s')
+           - greedy_q(env, s, q, gamma):
+             Returns action maximizing Q(s,a)
+           - Used for policy improvement
+
+        D) POLICY EXECUTION
+           - apply_policy(env, policy, state, gamma, values, pi):
+             Simulates episode following policy
+             Returns total discounted reward (gain)
+             Animates agent on board
+
+    Helper Functions:
+        - get_error(new, old): Computes convergence metric
+        - value_iteration(): Generic VI implementation
+        - policy_iteration(): Generic PI implementation
+
+================================================================================
+3. HOW IT WORKS - BASIC FLOW
+================================================================================
+
+STEP 1: Environment Setup
+    board = MazeBoard(rows=10, cols=10)
+    env = MazeEnvironment(board)
+    # Generates random maze, processes teleports
+
+STEP 2: Initialize Values and Policy
+    v = {s: 0 for s in env.states}
+    policy = {s: random.choice(list(Actions)).name for s in env.states}
+
+STEP 3: Run Value Iteration
+    v_optimal = value_iteration(
+        update=env.update_all_state_values,
+        values=v,
+        gamma=0.9,      # Discount factor
+        eps=0.01,       # Convergence threshold
+        iterations=100
+    )
+
+STEP 4: Extract Greedy Policy
+    optimal_policy = {s: greedy(env, s, v_optimal, gamma=0.9).name 
+                      for s in env.states}
+
+STEP 5: Visualize and Test
+    board.draw_board()
+    board.draw_values(v_optimal)
+    board.draw_actions(optimal_policy)
+    
+    # Simulate episode
+    gain = apply_policy(env, greedy, start_state, gamma, v_optimal)
+
+================================================================================
+4. REINFORCEMENT LEARNING CONCEPTS
+================================================================================
+
+4.1 Markov Decision Process (MDP)
+    - States (S): Grid positions
+    - Actions (A): {UP, DOWN, LEFT, RIGHT}
+    - Transition: Deterministic (action → next state)
+    - Rewards (R): Cell-specific (-1, -10, or 0)
+    - Discount factor (γ): Balances immediate vs future rewards
+
+4.2 Bellman Equations
+    
+    Optimality Equation (Value Iteration):
+        V*(s) = max_a [R(s,a) + γ * Σ P(s'|s,a) * V*(s')]
+        
+        Simplified (deterministic):
+        V*(s) = max_a [R(s,a) + γ * V*(s')]
+
+    Policy Evaluation (Policy Iteration):
+        V^π(s) = Σ π(a|s) * [R(s,a) + γ * V^π(s')]
+
+4.3 Convergence
+    - Tracks maximum value change between iterations
+    - Stops when: max_s |V_new(s) - V_old(s)| < ε
+    - Guaranteed convergence for γ < 1
+
+================================================================================
+5. SPECIAL FEATURES
+================================================================================
+
+5.1 Teleportation Mechanics
+    - TelCell stores destination Position
+    - When agent enters teleport:
+      * Reward = reward of destination cell
+      * Agent instantly moved to destination
+    - Teleports to walls are converted to regular cells
+    - Visual: Blue cells with matching index numbers
+
+5.2 Interactive Visualization
+    - Mouse click to inspect cells
+    - Real-time Q-value display on click
+    - Animated agent movement with directional arrows
+    - Color-coded cell types for easy identification
+
+================================================================================
+6. KEY PARAMETERS AND TUNING
+================================================================================
+
+gamma (γ) - Discount Factor:
+    - Range: [0, 1]
+    - High (0.9-0.99): Values long-term rewards
+    - Low (0.1-0.5): Prefers immediate rewards
+    - Affects convergence speed and policy behavior
+
+epsilon (ε) - Convergence Threshold:
+    - Range: [0.001, 0.1]
+    - Smaller: More accurate but slower
+    - Larger: Faster but less precise
+
+iterations - Maximum Iterations:
+    - Backup limit if convergence not reached
+    - Typical: 50-200 iterations
+
+
